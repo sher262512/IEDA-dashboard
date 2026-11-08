@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iEDA 三案例流程 Dashboard</title>
+<style>
+:root { --bg:#0f172a; --card:#1e293b; --line:#334155; --text:#e2e8f0; --dim:#94a3b8; --acc:#38bdf8; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); line-height:1.65; }
+header { padding:20px 28px; border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; z-index:10; }
+header h1 { font-size:20px; font-weight:600; }
+header p { color:var(--dim); font-size:13px; margin-top:4px; }
+nav { display:flex; gap:8px; padding:12px 28px; border-bottom:1px solid var(--line); background:var(--card); flex-wrap:wrap; }
+nav button { background:transparent; color:var(--dim); border:1px solid var(--line); padding:8px 16px; border-radius:8px; cursor:pointer; font-size:14px; }
+nav button.active { background:var(--acc); color:#0f172a; border-color:var(--acc); font-weight:600; }
+main { padding:24px 28px; max-width:1500px; margin:0 auto; }
+section.tab { display:none; }
+section.tab.active { display:block; }
+h2 { font-size:17px; margin:24px 0 12px; color:var(--acc); }
+h3 { font-size:15px; margin:16px 0 8px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:16px; overflow-x:auto; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { color:var(--dim); font-weight:600; background:#0b1220; }
+td.num { color:var(--dim); width:34px; }
+td.id { font-family:Consolas,monospace; color:var(--acc); white-space:nowrap; }
+td.k { font-family:Consolas,monospace; color:var(--dim); white-space:nowrap; }
+td.cmd { font-family:Consolas,monospace; font-size:11.5px; color:#cbd5e1; word-break:break-all; }
+.badge { display:inline-block; padding:1px 8px; border-radius:6px; font-size:12px; font-weight:600; }
+.b-ok { background:rgba(74,222,128,.15); color:var(--ok); }
+.b-warn { background:rgba(251,191,36,.15); color:var(--warn); }
+.b-bad { background:rgba(248,113,113,.15); color:var(--bad); }
+.diff { border-left:3px solid var(--acc); padding:10px 14px; margin:10px 0; background:#16202e; border-radius:6px; }
+.diff h4 { font-size:14px; margin-bottom:4px; }
+.diff p, .diff li { font-size:13px; color:var(--dim); }
+.diff li { margin-left:18px; }
+.code { font-family:Consolas,monospace; background:#0b1220; border:1px solid var(--line); border-radius:6px; padding:10px 12px; font-size:12px; white-space:pre-wrap; word-break:break-all; color:#cbd5e1; margin:8px 0; }
+.note { font-size:13px; color:var(--dim); background:#16202e; border:1px solid var(--line); border-radius:6px; padding:10px 12px; margin:8px 0; }
+</style>
+</head>
+<body>
+<header><h1>iEDA 三案例流程 Dashboard</h1><p>sky130_gcd / ihp130_gcd / ics55_gcd —— 独立工作流 + 问题诊断 + 点工具闭环 + glossary + 合并分析</p></header>
+<nav>
+  <button class="active" onclick="show('summary')">总结</button>
+  <button onclick="show('sky130')">sky130_gcd</button>
+  <button onclick="show('ihp130')">ihp130_gcd</button>
+  <button onclick="show('ics55')">ics55_gcd</button>
+</nav>
+<main>
+
+<section id="tab-summary" class="tab active">
+  <h2>三案例概览</h2>
+  <div class="card"><table>
+    <tr><th>案例</th><th>工艺</th><th>步骤数</th><th>运行状态</th><th>已知问题数</th></tr>
+    <tr><td class="id">sky130_gcd</td><td>SkyWater 130nm</td><td>28</td><td><span class="badge b-ok">全跑通</span></td><td>2（负 slack / 填充后 DRC 12 违例）</td></tr>
+    <tr><td class="id">ihp130_gcd</td><td>IHP SG13G2 130nm</td><td>17</td><td><span class="badge b-ok">全跑通</span></td><td>2（缺 STA/TO/DRC / 补检 64 违例）</td></tr>
+    <tr><td class="id">ics55_gcd</td><td>创芯 55nm</td><td>18</td><td><span class="badge b-warn">01–13 跑通，14 CTS 崩溃</span></td><td>1（CTS 原生崩溃）</td></tr>
+  </table></div>
+
+  <h2>「检测 → 修复 → 回跳」闭环（点工具不进主流程）</h2>
+  <div class="card">
+    <p class="note"><b>「不在主流程」的确切含义：</b>检测是主流程每步内嵌的 check 节点。检测结果三种：①无违规→直接下一步；②确定是上游代码问题/无法处理→<b>记录后直接下一步</b>；③检测到<b>可处理</b>的违规→才调用修复点工具，修复后<b>回到之前对应步骤重新跑通</b>。</p>
+    <table>
+      <tr><th>点工具</th><th>作用</th><th>触发条件</th><th>回跳目标</th></tr>
+      <tr><td class="id">eco_repair_via</td><td>修复 via 类 DRC 违例</td><td>检测到 via/cut/enclosure 类 DRC 违例</td><td>回到布线后 DRC 检测步骤重新检测</td></tr>
+<tr><td class="id">sta_supplement</td><td>补充/重跑 STA</td><td>主流程缺 STA，或需对某阶段 DEF 重做时序分析</td><td>并入对应时序分析步骤记录</td></tr>
+<tr><td class="id">drc_supplement</td><td>补充/重跑 DRC</td><td>主流程缺 DRC，或需重检</td><td>回到布线后 DRC 检测步骤</td></tr>
+    </table>
+    <p class="note">这三个点工具位于各案例 <code>fix/</code> 目录（specs.json + steps/*.sh + prompts/*.md），<b>不在主流程 specs.json 顺序里</b>，仅在检测失败后按需人工触发。</p>
+  </div>
+
+  <h2>关键差异（含确切原因）</h2>
+  <div class="diff"><h4>① tapcell（ihp130 缺失）</h4>
+    <p><b>确切原因：</b>SG13G2 标准单元库不提供 tap/endcap/welltie 单元（库里只有 decap 去耦电容和 fill 填充，都不具备阱接触/防闩锁的 tap 功能）；而 iFP 又没有 cut_rows（切行）这个替代能力，所以官方流程把 tapcell 整段注释掉了。官方脚本注释原文：<i>There are no Endcap and Welltie cells in this PDK, so `cut_rows` has to be called from the tapcell script. But yet iFP has no cut_rows support.</i></p></div>
+  <div class="diff"><h4>② 时序收敛链（STA×3 + DRV/hold）—— 仅 sky130 有</h4>
+    <p><b>确切原因：</b>sky130_gcd 的 28 步继承自项目已有的 p7 基线（40 步手工完整流程），显式包含 sta_after_cts/drv/hold 三次 STA、fix_drv、fix_hold。ihp130/ics55 则直接自官方 iEDA-Script 的 run_iEDA.sh 主流程（仅 8 会话）拆解而来，不含 STA/TO 环节；两者的 STA/TO/DRC 脚本虽存在于官方仓库，但未被 run_iEDA.sh 串入主流程，属孤立脚本（未接入主流程的脚本）。</p></div>
+  <div class="diff"><h4>③ DRC 检查 —— 仅 sky130 有</h4>
+    <p><b>确切原因：</b>sky130 的 p7 基线显式执行了布线后 DRC(25/26) 与填充后 DRC(27)；ihp130/ics55 的官方主流程未包含 DRC，现通过 fix/drc_supplement 补检。</p></div>
+  <div class="diff"><h4>④ 步骤粒度（sky130 更细）</h4>
+    <p><b>确切原因：</b>sky130 继承 p7 基线"一条入口=一条 Tcl 命令+共享会话"设计（CTS 拆 14/15、布线拆 22/23/24）；ihp130/ics55 沿用官方 run_iEDA.sh 的自包含脚本（run_iCTS.tcl 一次做 run_cts+cts_report，run_iRT.tcl 一次做 init_rt+run_rt+destroy_rt），每阶段=独立会话=一步。本质是同一批命令按不同粒度分组。</p></div>
+  <div class="diff"><h4>⑤ init_floorplan 方式</h4>
+    <p><b>确切原因：</b>sky130/ihp130 用固定面积（-die_area/-core_area）；ics55 用利用率（-core_util 0.2）。这是各案例官方脚本自身的 USE_FIXED_BBOX 开关选择。</p></div>
+
+  <h2>合并工作流分析</h2>
+  <div class="card"><table>
+    <tr><th>步骤</th><th>能否合并</th><th>合并方式 / 出问题的原因</th></tr>
+    <tr><td class="id">06 insert_tapcells</td><td><span class="badge b-warn">需 not_applicable</span></td><td>ihp130 用参数包声明"PDK 无 tap/endcap/welltie 单元"跳过并保留编号；不能强行给 ihp130 插 tap（库里没有该单元）</td></tr>
+    <tr><td class="id">16/18/20 sta_*</td><td><span class="badge b-ok">可合并</span></td><td>命令一致（run_sta），三案例均有对应脚本（未接入主流程），接入即可</td></tr>
+    <tr><td class="id">17 fix_drv / 19 fix_hold</td><td><span class="badge b-warn">ihp130 可，ics55 缺配置</span></td><td>ihp130 具备 to_drv/to_hold 配置（未接入主流程）；ics55 完全没有 to_* 配置，需新建 drv/hold/setup 三个 JSON（且 flow_config 的 ito_path 指向不存在的文件）</td></tr>
+    <tr><td class="id">25/26 check_drc / export_drc</td><td><span class="badge b-ok">可合并</span></td><td>命令一致（run_drc/save_drc），三案例均有对应脚本（未接入主流程）</td></tr>
+    <tr><td class="id">14/15 build_cts + report_cts</td><td><span class="badge b-ok">可合并（粒度）</span></td><td>只是 sky130 拆两步（共享会话）、ihp130/ics55 合一步（独立会话），命令相同</td></tr>
+    <tr><td class="id">22/23/24 init/route/export_route</td><td><span class="badge b-ok">可合并（粒度）</span></td><td>同上，命令相同</td></tr>
+    <tr><td class="id">14 build_cts（ics55）</td><td><span class="badge b-bad">会出问题</span></td><td>ics55 的 CTS 因 iEDA 原生 BoundSkewTree 算法崩溃（Elmore 延迟增量算出负值），合并后此步仍会崩，需先解决</td></tr>
+    <tr><td class="id">27 insert_fillers（填充后 DRC）</td><td><span class="badge b-warn">建议统一补</span></td><td>sky130 填充后 DRC 查出 12 违例；ihp130/ics55 官方无填充后 DRC，建议统一补检</td></tr>
+  </table></div>
+</section>
+
+<section id="tab-sky130" class="tab">
+  <h2>sky130_gcd —— 工作流（28 步）</h2>
+  <div class="card"><table>
+    <tr><th>#</th><th>步骤</th><th>职责</th><th>目标命令</th></tr>
+    <tr><td class="num">01</td><td class="id">01_import_netlist</td><td>导入门级网表，建立设计</td><td class="cmd">verilog_init -path ⟨inputs.verilog⟩ -top ⟨design.top⟩</td></tr>
+<tr><td class="num">02</td><td class="id">02_init_floorplan</td><td>初始化 die/core/site</td><td class="cmd">init_floorplan -die_area ⟨floorplan.die_area⟩ -core_area ⟨floorplan.core_area⟩ -core_site ⟨floorplan.site⟩ -io_site ⟨floorplan.site⟩ -corner_site ⟨floorplan.site⟩</td></tr>
+<tr><td class="num">03</td><td class="id">03_make_tracks</td><td>按层建布线轨道</td><td class="cmd">gern_track -layer ⟨layer⟩ -x_start ⟨x_start⟩ -x_step ⟨x_step⟩ -y_start ⟨y_start⟩ -y_step ⟨y_step⟩</td></tr>
+<tr><td class="num">04</td><td class="id">04_create_power_ports</td><td>声明电源/地端口</td><td class="cmd">add_pdn_io -net_name ⟨net⟩ -direction ⟨direction⟩ -is_power ⟨is_power⟩</td></tr>
+<tr><td class="num">05</td><td class="id">05_place_pins</td><td>放置 IO 引脚</td><td class="cmd">auto_place_pins -layer ⟨pins.layer⟩ -width ⟨pins.width⟩ -height ⟨pins.height⟩</td></tr>
+<tr><td class="num">06</td><td class="id">06_insert_tapcells</td><td>插入 tap/endcap 单元</td><td class="cmd">tapcell -tapcell ⟨tapcell.tapcell⟩ -distance ⟨tapcell.distance⟩ -endcap ⟨tapcell.endcap⟩</td></tr>
+<tr><td class="num">07</td><td class="id">07_connect_power_nets</td><td>绑定电源/地引脚映射</td><td class="cmd">global_net_connect -net_name ⟨net⟩ -instance_pin_name ⟨pin⟩ -is_power ⟨is_power⟩</td></tr>
+<tr><td class="num">08</td><td class="id">08_create_power_grids</td><td>创建电源网格</td><td class="cmd">create_grid -layer_name ⟨layer⟩ -net_name_power ⟨power⟩ -net_name_ground ⟨ground⟩ -width ⟨width⟩</td></tr>
+<tr><td class="num">09</td><td class="id">09_create_power_stripes</td><td>创建电源条带</td><td class="cmd">create_stripe -layer_name ⟨layer⟩ -net_name_power ⟨power⟩ -net_name_ground ⟨ground⟩ -width ⟨width⟩ -pitch ⟨pitch⟩ -offset ⟨offset⟩</td></tr>
+<tr><td class="num">10</td><td class="id">10_connect_power_layers</td><td>连接电源层</td><td class="cmd">connect_two_layer -layers ⟨layers⟩</td></tr>
+<tr><td class="num">11</td><td class="id">11_finalize_floorplan</td><td>标记时钟并导出布图</td><td class="cmd">set_net -net_name ⟨design.clock.net⟩ -type CLOCK</td></tr>
+<tr><td class="num">12</td><td class="id">12_fix_fanout</td><td>修复高扇出</td><td class="cmd">run_no_fixfanout -config ⟨config.runtime.no_fixfanout⟩</td></tr>
+<tr><td class="num">13</td><td class="id">13_place</td><td>标准单元布局</td><td class="cmd">run_placer -config ⟨config.runtime.pl⟩</td></tr>
+<tr><td class="num">14</td><td class="id">14_build_cts</td><td>构建时钟树</td><td class="cmd">run_cts -config ⟨config.runtime.cts⟩ -work_dir cts</td></tr>
+<tr><td class="num">15</td><td class="id">15_report_cts</td><td>导出 CTS 报告</td><td class="cmd">cts_report -path cts</td></tr>
+<tr><td class="num">16</td><td class="id">16_sta_after_cts</td><td>CTS 后时序分析</td><td class="cmd">run_sta -output cts/sta/</td></tr>
+<tr><td class="num">17</td><td class="id">17_fix_drv</td><td>修复电气(DRV)违例</td><td class="cmd">run_to_drv -config ⟨config.runtime.to_drv⟩</td></tr>
+<tr><td class="num">18</td><td class="id">18_sta_after_drv</td><td>DRV 后时序分析</td><td class="cmd">run_sta -output to/drv/sta/</td></tr>
+<tr><td class="num">19</td><td class="id">19_fix_hold</td><td>修复 hold 违例</td><td class="cmd">run_to_hold -config ⟨config.runtime.to_hold⟩</td></tr>
+<tr><td class="num">20</td><td class="id">20_sta_after_hold</td><td>hold 后时序分析</td><td class="cmd">run_sta -output to/hold/sta/</td></tr>
+<tr><td class="num">21</td><td class="id">21_legalize</td><td>合法化</td><td class="cmd">run_incremental_flow -config ⟨config.runtime.pl⟩</td></tr>
+<tr><td class="num">22</td><td class="id">22_init_route</td><td>初始化布线</td><td class="cmd">init_rt -temp_directory_path rt/ -bottom_routing_layer ⟨routing.bottom_layer⟩ -top_routing_layer ⟨routing.top_layer⟩ -thread_number ⟨routing.threads⟩</td></tr>
+<tr><td class="num">23</td><td class="id">23_route</td><td>执行布线</td><td class="cmd">run_rt</td></tr>
+<tr><td class="num">24</td><td class="id">24_export_route</td><td>结束布线并导出</td><td class="cmd">destroy_rt</td></tr>
+<tr><td class="num">25</td><td class="id">25_check_drc</td><td>布线后 DRC 检查</td><td class="cmd">run_drc -config ⟨config.runtime.drc⟩ -path report/drc/iRT_drc.rpt</td></tr>
+<tr><td class="num">26</td><td class="id">26_export_drc</td><td>导出 DRC 明细</td><td class="cmd">save_drc -path drc/detail.drc</td></tr>
+<tr><td class="num">27</td><td class="id">27_insert_fillers</td><td>插入填充单元</td><td class="cmd">run_filler -config ⟨config.runtime.pl⟩ ; run_drc -config ⟨config.runtime.drc⟩ -path report/drc/iPL_filler_drc.rpt ; save_drc -path detail.drc</td></tr>
+<tr><td class="num">28</td><td class="id">28_export_gds</td><td>导出 GDS</td><td class="cmd">gds_save -path final_design.gds2</td></tr>
+  </table></div>
+
+  <h2>sky130_gcd —— 问题诊断（问题 / 来源 / 成因 / 结果）</h2>
+  <div class="card"><table>
+    <tr><th>问题</th><th>来源</th><th>成因</th><th>导致的结果</th></tr>
+    <tr><td class="k">setup 负 slack（-0.37ns VIOLATED）</td><td>STA 报告 gcd.rpt（第 16/18/20 步）</td><td>时钟 2.0ns 周期下最长 setup 路径延迟超期；流程含 DRV/hold 优化但无 setup 优化（run_to_setup 未接入 p7 基线流程）</td><td>quality=violated，如实记录；负 slack 非执行失败，流程不中断</td></tr>
+<tr><td class="k">填充后 DRC 12 违例</td><td>第 27 步填充后 DRC（drc_fill/drc_temp_directory/violation_map.json）</td><td>12 处 parallel_run_length_spacing（met1 布线 vs 填充单元遮挡间距不足，涉及 obs 网络）</td><td>iEDA 无 spacing 修复原语（仅 eco_repair_via 修 via），无法自动修复，记录</td></tr>
+  </table></div>
+
+  <h2>sky130_gcd —— glossary（参数）</h2>
+  <div class="card"><table>
+    <tr><th>参数</th><th>值</th></tr>
+    <tr><td class="k">design.top</td><td>gcd</td></tr>
+<tr><td class="k">design.clock</td><td>net=clk / clock_name=core_clock</td></tr>
+<tr><td class="k">floorplan.die_area / core_area</td><td>[0.0, 0.0, 149.96, 150.128] / [9.996, 10.08, 139.964, 140.048]</td></tr>
+<tr><td class="k">floorplan.site (core/io/corner)</td><td>None / None / None</td></tr>
+<tr><td class="k">tracks 层列表</td><td>li1, met1, met2, met3, met4, met5</td></tr>
+<tr><td class="k">pins (layer/width/height)</td><td>met5 / 2000 / 2000</td></tr>
+<tr><td class="k">tapcell</td><td>sky130_fd_sc_hs__tap_1 dist=14 endcap=sky130_fd_sc_hs__fill_1</td></tr>
+<tr><td class="k">power.ports</td><td>VDD, VSS</td></tr>
+<tr><td class="k">power.pin_maps 条数</td><td>6</td></tr>
+<tr><td class="k">power.grids</td><td>met1 w=0.48</td></tr>
+<tr><td class="k">power.stripes</td><td>met4 w=1.60 pitch=27.14; met5 w=1.60 pitch=27.20</td></tr>
+<tr><td class="k">power.layer_connects</td><td>met1 met4 met4 met5</td></tr>
+<tr><td class="k">routing (bottom/top/threads)</td><td>met1 / met4 / 64</td></tr>
+<tr><td class="k">pl.num_threads / target_density</td><td>1 / 0.8</td></tr>
+<tr><td class="k">cts.use_skew_tree_alg / routing_layer</td><td>OFF / [4, 5]</td></tr>
+<tr><td class="k">no_fixfanout (buffer/max_fanout)</td><td>sky130_fd_sc_hs__buf_8 / 30</td></tr>
+<tr><td class="k">inputs</td><td>tech=tech.lef; lef=cells.lef; lib=hs_tt_025C_1v80.lib; sdc=constraints.sdc; v=gcd.v</td></tr>
+  </table></div>
+</section>
+
+<section id="tab-ihp130" class="tab">
+  <h2>ihp130_gcd —— 工作流（17 步）</h2>
+  <div class="card"><table>
+    <tr><th>#</th><th>步骤</th><th>职责</th><th>目标命令</th></tr>
+    <tr><td class="num">01</td><td class="id">01_import_netlist</td><td>导入门级网表，建立设计</td><td class="cmd">verilog_init -path ⟨inputs.verilog⟩ -top ⟨design.top⟩</td></tr>
+<tr><td class="num">02</td><td class="id">02_init_floorplan</td><td>初始化 die/core/site</td><td class="cmd">init_floorplan -die_area ⟨floorplan.die_area⟩ -core_area ⟨floorplan.core_area⟩ -core_site ⟨floorplan.core_site⟩ -io_site ⟨floorplan.io_site⟩ -corner_site ⟨floorplan.corner_site⟩</td></tr>
+<tr><td class="num">03</td><td class="id">03_make_tracks</td><td>按层建布线轨道</td><td class="cmd">gern_track -layer ⟨layer⟩ -x_start ⟨x_start⟩ -x_step ⟨x_step⟩ -y_start ⟨y_start⟩ -y_step ⟨y_step⟩</td></tr>
+<tr><td class="num">04</td><td class="id">04_create_power_ports</td><td>声明电源/地端口</td><td class="cmd">add_pdn_io -net_name ⟨net⟩ -direction ⟨direction⟩ -is_power ⟨is_power⟩</td></tr>
+<tr><td class="num">05</td><td class="id">05_place_pins</td><td>放置 IO 引脚</td><td class="cmd">auto_place_pins -layer ⟨pins.layer⟩ -width ⟨pins.width⟩ -height ⟨pins.height⟩</td></tr>
+<tr><td class="num">06</td><td class="id">06_connect_power_nets</td><td>绑定电源/地引脚映射</td><td class="cmd">global_net_connect -net_name ⟨net⟩ -instance_pin_name ⟨pin⟩ -is_power ⟨is_power⟩</td></tr>
+<tr><td class="num">07</td><td class="id">07_create_power_grids</td><td>创建电源网格</td><td class="cmd">create_grid -layer_name ⟨layer⟩ -net_name_power ⟨power⟩ -net_name_ground ⟨ground⟩ -width ⟨width⟩ -offset ⟨offset⟩</td></tr>
+<tr><td class="num">08</td><td class="id">08_create_power_stripes</td><td>创建电源条带</td><td class="cmd">create_stripe -layer_name ⟨layer⟩ -net_name_power ⟨power⟩ -net_name_ground ⟨ground⟩ -width ⟨width⟩ -pitch ⟨pitch⟩ -offset ⟨offset⟩</td></tr>
+<tr><td class="num">09</td><td class="id">09_connect_power_layers</td><td>连接电源层</td><td class="cmd">connect_two_layer -layers ⟨layers⟩</td></tr>
+<tr><td class="num">10</td><td class="id">10_finalize_floorplan</td><td>标记时钟并导出布图</td><td class="cmd">set_net -net_name ⟨design.clock.net⟩ -type CLOCK</td></tr>
+<tr><td class="num">11</td><td class="id">11_fix_fanout</td><td>修复高扇出</td><td class="cmd">run_no_fixfanout -config ⟨config.runtime.no_fixfanout⟩</td></tr>
+<tr><td class="num">12</td><td class="id">12_place</td><td>标准单元布局</td><td class="cmd">run_placer -config ⟨config.runtime.pl⟩</td></tr>
+<tr><td class="num">13</td><td class="id">13_build_cts</td><td>构建时钟树</td><td class="cmd">run_cts -config ⟨config.runtime.cts⟩ -work_dir cts ; cts_report -path cts</td></tr>
+<tr><td class="num">14</td><td class="id">14_legalize</td><td>合法化</td><td class="cmd">run_incremental_flow -config ⟨config.runtime.pl⟩</td></tr>
+<tr><td class="num">15</td><td class="id">15_route</td><td>执行布线</td><td class="cmd">init_rt -temp_directory_path rt/ -bottom_routing_layer ⟨routing.bottom_layer⟩ -top_routing_layer ⟨routing.top_layer⟩ -thread_number ⟨routing.threads⟩ ; run_rt ; destroy_rt</td></tr>
+<tr><td class="num">16</td><td class="id">16_insert_fillers</td><td>插入填充单元</td><td class="cmd">run_filler -config ⟨config.runtime.pl⟩</td></tr>
+<tr><td class="num">17</td><td class="id">17_export_gds</td><td>导出 GDS</td><td class="cmd">gds_save -path final_design.gds2</td></tr>
+  </table></div>
+
+  <h2>ihp130_gcd —— 问题诊断（问题 / 来源 / 成因 / 结果）</h2>
+  <div class="card"><table>
+    <tr><th>问题</th><th>来源</th><th>成因</th><th>导致的结果</th></tr>
+    <tr><td class="k">主流程缺少 STA / TO / DRC 检查</td><td>官方 run_iEDA.sh（仅串接 8 个会话）</td><td>iEDA-Script 官方主流程做了简化，仅串接 iFP→iNO→iPL→iCTS→legalize→iRT→filler→GDS 八个会话；STA、TO、DRC 对应的脚本虽存在于仓库，但未被 run_iEDA.sh 串入主流程（其引用的 CONFIG_DIR 环境变量也未导出），属于孤立脚本（未接入主流程的脚本）</td><td>流程未执行时序与 DRC 检查，因而尚无相应签核结论——属“未检查”，而非“检查通过”</td></tr>
+<tr><td class="k">补检 DRC 发现 64 项违例</td><td>fix/drc_supplement 补检（fix_drc/drc_temp_directory）</td><td>64 项违例中 38 项为 minimum_width（最小线宽）、26 项为 out_of_die（越出 die 边界），均位于 TopMetal1 层、与 IO 引脚相关：IO 引脚线宽不足，且其形状超出 die 边界（如 y=-330 / 150270，而 die 为 0~150000）</td><td>iEDA 未提供对应修复原语，只能记录，无法自动修复</td></tr>
+  </table></div>
+
+  <h2>ihp130_gcd —— glossary（参数）</h2>
+  <div class="card"><table>
+    <tr><th>参数</th><th>值</th></tr>
+    <tr><td class="k">design.top</td><td>gcd</td></tr>
+<tr><td class="k">design.clock</td><td>net=clk / clock_name=core_clock</td></tr>
+<tr><td class="k">floorplan.die_area / core_area</td><td>[0, 0, 150, 150] / [20, 20, 130, 130]</td></tr>
+<tr><td class="k">floorplan.site (core/io/corner)</td><td>CoreSite / sg13g2_ioSite / sg13g2_ioSite</td></tr>
+<tr><td class="k">tracks 层列表</td><td>Metal1, Metal2, Metal3, Metal4, Metal5, TopMetal1, TopMetal2</td></tr>
+<tr><td class="k">pins (layer/width/height)</td><td>Metal5 / 1000 / 1000</td></tr>
+<tr><td class="k">tapcell</td><td>无（PDK 不适用）</td></tr>
+<tr><td class="k">power.ports</td><td>VDD, VSS</td></tr>
+<tr><td class="k">power.pin_maps 条数</td><td>7</td></tr>
+<tr><td class="k">power.grids</td><td>Metal1 w=0.44</td></tr>
+<tr><td class="k">power.stripes</td><td>Metal5 w=2.700 pitch=75.6; TopMetal1 w=1.800 pitch=75.6</td></tr>
+<tr><td class="k">power.layer_connects</td><td>Metal1 Metal5 Metal5 TopMetal1</td></tr>
+<tr><td class="k">routing (bottom/top/threads)</td><td>Metal2 / Metal5 / 64</td></tr>
+<tr><td class="k">pl.num_threads / target_density</td><td>16 / 0.6</td></tr>
+<tr><td class="k">cts.use_skew_tree_alg / routing_layer</td><td>ON / [5, 6]</td></tr>
+<tr><td class="k">no_fixfanout (buffer/max_fanout)</td><td>sg13g2_buf_8 / 30</td></tr>
+<tr><td class="k">inputs</td><td>tech=sg13g2_tech.lef; lef=sg13g2_stdcell.lef; sg13g2_io.lef; lib=sg13g2_stdcell_typ_1p20V_25C.lib; sg13g2_io_typ_1p2V_3p3V_25C.lib; sdc=default.sdc; v=gcd_nl.v</td></tr>
+  </table></div>
+</section>
+
+<section id="tab-ics55" class="tab">
+  <h2>ics55_gcd —— 工作流（18 步）</h2>
+  <div class="card"><table>
+    <tr><th>#</th><th>步骤</th><th>职责</th><th>目标命令</th></tr>
+    <tr><td class="num">01</td><td class="id">01_import_netlist</td><td>导入门级网表，建立设计</td><td class="cmd">verilog_init -path ⟨inputs.verilog⟩ -top ⟨design.top⟩</td></tr>
+<tr><td class="num">02</td><td class="id">02_init_floorplan</td><td>初始化 die/core/site</td><td class="cmd">init_floorplan -core_util ⟨floorplan.core_util⟩ -core_site ⟨floorplan.core_site⟩ -io_site ⟨floorplan.io_site⟩ -corner_site ⟨floorplan.corner_site⟩</td></tr>
+<tr><td class="num">03</td><td class="id">03_make_tracks</td><td>按层建布线轨道</td><td class="cmd">gern_track -layer ⟨layer⟩ -x_start ⟨x_start⟩ -x_step ⟨x_step⟩ -y_start ⟨y_start⟩ -y_step ⟨y_step⟩</td></tr>
+<tr><td class="num">04</td><td class="id">04_create_power_ports</td><td>声明电源/地端口</td><td class="cmd">add_pdn_io -net_name ⟨net⟩ -direction ⟨direction⟩ -is_power ⟨is_power⟩</td></tr>
+<tr><td class="num">05</td><td class="id">05_place_pins</td><td>放置 IO 引脚</td><td class="cmd">auto_place_pins -layer ⟨pins.layer⟩ -width ⟨pins.width⟩ -height ⟨pins.height⟩</td></tr>
+<tr><td class="num">06</td><td class="id">06_insert_tapcells</td><td>插入 tap/endcap 单元</td><td class="cmd">tapcell -tapcell ⟨tapcell.tapcell⟩ -distance ⟨tapcell.distance⟩ -endcap ⟨tapcell.endcap⟩</td></tr>
+<tr><td class="num">07</td><td class="id">07_connect_power_nets</td><td>绑定电源/地引脚映射</td><td class="cmd">global_net_connect -net_name ⟨net⟩ -instance_pin_name ⟨pin⟩ -is_power ⟨is_power⟩</td></tr>
+<tr><td class="num">08</td><td class="id">08_create_power_grids</td><td>创建电源网格</td><td class="cmd">create_grid -layer_name ⟨layer⟩ -net_name_power ⟨power⟩ -net_name_ground ⟨ground⟩ -width ⟨width⟩ -offset ⟨offset⟩</td></tr>
+<tr><td class="num">09</td><td class="id">09_create_power_stripes</td><td>创建电源条带</td><td class="cmd">create_stripe -layer_name ⟨layer⟩ -net_name_power ⟨power⟩ -net_name_ground ⟨ground⟩ -width ⟨width⟩ -pitch ⟨pitch⟩ -offset ⟨offset⟩</td></tr>
+<tr><td class="num">10</td><td class="id">10_connect_power_layers</td><td>连接电源层</td><td class="cmd">connect_two_layer -layers ⟨layers⟩</td></tr>
+<tr><td class="num">11</td><td class="id">11_finalize_floorplan</td><td>标记时钟并导出布图</td><td class="cmd">set_net -net_name ⟨design.clock.net⟩ -type CLOCK</td></tr>
+<tr><td class="num">12</td><td class="id">12_fix_fanout</td><td>修复高扇出</td><td class="cmd">run_no_fixfanout -config ⟨config.runtime.no_fixfanout⟩</td></tr>
+<tr><td class="num">13</td><td class="id">13_place</td><td>标准单元布局</td><td class="cmd">run_placer -config ⟨config.runtime.pl⟩</td></tr>
+<tr><td class="num">14</td><td class="id">14_build_cts</td><td>构建时钟树</td><td class="cmd">run_cts -config ⟨config.runtime.cts⟩ -work_dir cts ; cts_report -path cts</td></tr>
+<tr><td class="num">15</td><td class="id">15_legalize</td><td>合法化</td><td class="cmd">run_incremental_flow -config ⟨config.runtime.pl⟩</td></tr>
+<tr><td class="num">16</td><td class="id">16_route</td><td>执行布线</td><td class="cmd">init_rt -temp_directory_path rt/ -bottom_routing_layer ⟨routing.bottom_layer⟩ -top_routing_layer ⟨routing.top_layer⟩ -thread_number ⟨routing.threads⟩ ; run_rt ; destroy_rt</td></tr>
+<tr><td class="num">17</td><td class="id">17_insert_fillers</td><td>插入填充单元</td><td class="cmd">run_filler -config ⟨config.runtime.pl⟩</td></tr>
+<tr><td class="num">18</td><td class="id">18_export_gds</td><td>导出 GDS</td><td class="cmd">gds_save -path final_design.gds2</td></tr>
+  </table></div>
+
+  <h2>ics55_gcd —— 问题诊断（问题 / 来源 / 成因 / 结果）</h2>
+  <div class="card"><table>
+    <tr><th>问题</th><th>来源</th><th>成因</th><th>导致的结果</th></tr>
+    <tr><td class="k">CTS 时钟树综合崩溃（原生缺陷）</td><td>第 14 步 build_cts 的 session 日志（BoundSkewTree.cc:1879 处 LOG_FATAL）</td><td>use_skew_tree_alg=ON 启用了 BoundSkewTree 时钟树算法。在 34 个时钟 sink 与顶层厚金属（MET5/T4M2/RDL）单位 RC 的组合下，算法在合并时钟树时计算两点间走线的 Elmore 延迟增量，得到负值。延迟增量表示“增加一段走线后信号到达时间的变化量”：正值意味着信号更晚到达（正常），负值意味着加线后信号反而更早到达——这在物理上不可能（走线只会增大 RC 延迟、使信号更晚到达），因此算法判定内部状态或 RC 数据已出错，触发断言 &#x27;point increase delay is negative&#x27; 并终止进程</td><td>iCTS_result.def 未生成，后续 15-18 步（legalize / route / filler / GDS）因此断链、未能运行</td></tr>
+  </table></div>
+
+  <h2>ics55_gcd —— glossary（参数）</h2>
+  <div class="card"><table>
+    <tr><th>参数</th><th>值</th></tr>
+    <tr><td class="k">design.top</td><td>gcd</td></tr>
+<tr><td class="k">design.clock</td><td>net=clk / clock_name=core_clock</td></tr>
+<tr><td class="k">floorplan.core_util</td><td>0.2</td></tr>
+<tr><td class="k">floorplan.site (core/io/corner)</td><td>core7 / core7 / core7</td></tr>
+<tr><td class="k">tracks 层列表</td><td>MET1, MET2, MET3, MET4, MET5, T4M2, RDL</td></tr>
+<tr><td class="k">pins (layer/width/height)</td><td>MET3 / 300 / 600</td></tr>
+<tr><td class="k">tapcell</td><td>FILLTAPH7R dist=58 endcap=FILLTAPH7R</td></tr>
+<tr><td class="k">power.ports</td><td>VDD, VDDIO, VSS, VSSIO</td></tr>
+<tr><td class="k">power.pin_maps 条数</td><td>8</td></tr>
+<tr><td class="k">power.grids</td><td>MET1 w=0.16</td></tr>
+<tr><td class="k">power.stripes</td><td>MET4 w=1 pitch=16; MET5 w=1 pitch=16</td></tr>
+<tr><td class="k">power.layer_connects</td><td>MET1 MET4; MET4 MET5</td></tr>
+<tr><td class="k">routing (bottom/top/threads)</td><td>MET2 / MET5 / 64</td></tr>
+<tr><td class="k">pl.num_threads / target_density</td><td>16 / 0.6</td></tr>
+<tr><td class="k">cts.use_skew_tree_alg / routing_layer</td><td>ON / [5, 6]</td></tr>
+<tr><td class="k">no_fixfanout (buffer/max_fanout)</td><td>BUFX3H7R / 16</td></tr>
+<tr><td class="k">inputs</td><td>tech=N551P6M.lef; lef=ics55_LLSC_H7CR.lef; ics55_LLSC_H7CL.lef; lib=ics55_LLSC_H7CL_ss_rcworst_1p08_125_nldm.lib; ics55_LLSC_H7CR_ss_rcworst_1p08_125_nldm.lib; sdc=default.sdc; v=gcd_nl.v</td></tr>
+  </table></div>
+</section>
+
+</main>
+<script>
+function show(id) {
+  document.querySelectorAll('section.tab').forEach(s => s.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => {
+    const t = b.textContent.trim();
+    if ((id==='summary' && t==='总结') || (id!=='summary' && t.startsWith(id + '_'))) b.classList.add('active');
+  });
+}
+</script>
+</body>
+</html>
